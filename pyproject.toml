@@ -1,0 +1,19 @@
+[project]
+name = "taller-rf-miax15"
+version = "0.1.0"
+description = "MIAX 15 fixed-income portfolio analysis workshop"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "matplotlib",
+    "pandas",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel",
+    "jupyterlab",
+]
+
+[tool.uv]
+package = false
