@@ -52,22 +52,14 @@ jobs:
           steps.metadata.outputs.update-type)
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          PR_ID: ${{ github.event.pull_request.node_id }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "$(gh pr view "$PR_URL" --json autoMergeRequest --jq '.autoMergeRequest != null')" = "true" ]; then
             echo "Auto-merge is already armed on this pull request."
             exit 0
           fi
-          # `gh pr merge --auto` merges on the spot when the pull request is
-          # already mergeable; this mutation always arms and never merges.
-          # shellcheck disable=SC2016
-          gh api graphql -f query='
-            mutation($id: ID!) {
-              enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: SQUASH}) {
-                clientMutationId
-              }
-            }' -f id="$PR_ID"
+          # GitHub merges immediately if all required checks already passed.
+          gh pr merge --auto --squash "$PR_URL"
 
       - name: Disarm an update that became a major
         if: steps.metadata.outputs.update-type == 'version-update:semver-major'
