@@ -9,7 +9,7 @@ tooling; the exercises have not been completed.
 ## Files
 
 - `src/analisis_cartera.ipynb`: assignment instructions and notebook scaffold.
-- `src/funciones_aux.py`: empty module provided for auxiliary functions.
+- `src/funciones_aux.py`: partial classroom development generating the example bond's cash flows; discounting and full valuation remain pending.
 - `data/`: four original CSV inputs (bond universe, bond prices, €STR curve,
   and other market series). Keep these files unchanged.
 - `results/`: destination for the CSV deliverables requested in the notebook.
@@ -34,6 +34,18 @@ original Python 3.11 metadata; select the project environment when opening it.
 Use uv 0.13.8 or newer so it can download a stable Python 3.15 interpreter.
 The lockfile records resolved versions; `uv sync --locked` installs both the
 analysis libraries and the development tools into `.venv`.
+
+On Windows, if installing the locked PyYAML dependency requests Microsoft C++
+Build Tools, its optional C extension can be disabled for this installation
+without changing dependencies (PowerShell):
+
+```powershell
+$env:PYYAML_FORCE_LIBYAML = "0"
+uv sync --locked
+```
+
+This uses PyYAML's pure Python implementation. See its
+[build configuration](https://github.com/yaml/pyyaml/blob/6.0.3/setup.py).
 
 Open `src/analisis_cartera.ipynb` and select the kernel for this project's `.venv`
 (`.venv/bin/python`, or `.venv\Scripts\python.exe` on Windows). With VS Code,
