@@ -55,6 +55,14 @@ The hooks check whitespace and configuration, lint and format Python with Ruff,
 and type-check `src` with mypy. They leave the notebook and source CSVs untouched.
 Pytest is available for future tests; it is not a commit hook while no tests exist.
 
+Branch names use `<type>/<description>`, with lowercase letters and digits in
+hyphen-separated words, for example `feat/bond-valuation`. Allowed types are
+`feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`,
+`chore`, and `revert`. `main`, `develop`, and `dependabot/` branches are
+exempt. The installed commit hook checks the current branch; pull requests to
+`main` and `develop` run the same check. GitHub must require the **Branch name**
+status check in branch protection or a ruleset for it to block merging.
+
 ## GitHub Codespaces
 
 On GitHub, choose **Code → Codespaces → Create codespace on main**. The devcontainer
