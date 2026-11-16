@@ -1,4 +1,4 @@
-﻿ISIN;Description;Ccy;Price;Issuer;Industry Sector;Maturity;Coupon;Rating;PD 1YR;Outstanding Amount;Callable;Next Call Date;Seniority;Coupon Frequency;Coupon Type;First Coupon Date;Penultimate Coupon Date;Issue date;Bid Price;Ask Price
+ISIN;Description;Ccy;Price;Issuer;Industry Sector;Maturity;Coupon;Rating;PD 1YR;Outstanding Amount;Callable;Next Call Date;Seniority;Coupon Frequency;Coupon Type;First Coupon Date;Penultimate Coupon Date;Issue date;Bid Price;Ask Price
 XS0161488498;DT 7 ½ 01/24/33;EUR;117.874;DEUTSCHE TELEKOM INT FIN;Communications;24/01/2033;7.5;BBB+;0.021966191;500000000;N;;Sr Unsecured;1;FIXED;24/01/2004;24/01/2032;24/01/2003;117.6614;118.0866
 FR0000471930;ORAFP 8 ⅛ 01/28/33;EUR;121.4;ORANGE SA;Communications;28/01/2033;8.125;BBB+;2.14239E-05;1500000000;N;;Sr Unsecured;1;FIXED;28/01/2004;28/01/2032;28/01/2003;121.1417;121.6583
 XS0162513211;EOANGR 5 ¾ 02/14/33;EUR;108.3925;E.ON INTL FINANCE BV;Utilities;14/02/2033;5.75;BBB+;0.00010082;600000000;N;;Sr Unsecured;1;FIXED;14/02/2004;14/02/2032;14/02/2003;108.168;108.617

@@ -7,12 +7,14 @@ local instructions using the Local agent workflow section in the README.
 ## Project and commands
 
 This is the MIAX 15 fixed-income coursework workspace, not an installable package.
-Use Python 3.11 and uv. Run commands from the repository root:
+Use Python 3.15 and uv. Run commands from the repository root:
 
 - Install the locked environment: `uv sync --locked`.
 - Check dependency consistency: `uv lock --check`.
 - Launch notebooks: `uv run --locked jupyter lab`.
 - Smoke-check dependencies: `uv run --locked python -c "import pandas; import matplotlib; import ipykernel"`.
+- Install Git hooks: `uv run --locked pre-commit install`.
+- Run the quality gates: `uv run --locked pre-commit run --all-files`.
 
 Select `.venv/bin/python` (Windows: `.venv\Scripts\python.exe`) as the notebook
 kernel. Add dependencies with `uv add` or `uv add --dev` and commit `uv.lock`.

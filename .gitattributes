@@ -1,7 +1,2 @@
-# Normalize new text files to LF across development platforms.
+# Normalize text to LF in the repository and working tree; leave binaries untouched.
 * text=auto eol=lf
-
-# Preserve professor-provided files byte for byte, including CRLF and BOM.
-/data/** -text
-/src/analisis_cartera.ipynb -text
-/src/funciones_aux.py -text

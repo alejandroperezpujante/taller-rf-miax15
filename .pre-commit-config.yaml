@@ -1,0 +1,26 @@
+# Keep the professor's inputs and notebook outputs untouched by hooks.
+exclude: '^(data/|src/analisis_cartera\.ipynb$)'
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.5
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+        types_or: [python, pyi]
+      - id: ruff-format
+        types_or: [python, pyi]
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: uv run --locked mypy
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false

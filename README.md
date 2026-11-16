@@ -14,9 +14,9 @@ tooling; the exercises have not been completed.
   and other market series). Keep these files unchanged.
 - `results/`: destination for the CSV deliverables requested in the notebook.
 
-Original CSVs use semicolons, Windows line endings, and `#N/D` missing-value
-markers where present. `universo.csv` has a UTF-8 BOM. Select parsing options
-explicitly when writing the analysis; preserve the input files as supplied.
+CSVs use UTF-8 without a BOM, LF line endings, semicolons, and `#N/D`
+missing-value markers where present. Select parsing options explicitly when
+writing the analysis; preserve the input data values as supplied.
 
 ## Local development
 
@@ -29,8 +29,9 @@ uv sync --locked
 uv run --locked jupyter lab
 ```
 
-The committed `.python-version` selects Python 3.11, matching the notebook's
-original Python 3.11 metadata. uv can download that interpreter if it is absent.
+The committed `.python-version` selects Python 3.15. The notebook retains its
+original Python 3.11 metadata; select the project environment when opening it.
+Use uv 0.13.8 or newer so it can download a stable Python 3.15 interpreter.
 The lockfile records resolved versions; `uv sync --locked` installs both the
 analysis libraries and the development tools into `.venv`.
 
@@ -48,10 +49,16 @@ uv run --locked python -c "import pandas; import matplotlib; import ipykernel"
 Use `uv add <package>` for analysis dependencies and `uv add --dev <package>` for
 development tools. Commit both `pyproject.toml` and `uv.lock` after changes.
 
+Install the Git hooks once per checkout with `uv run --locked pre-commit install`.
+Run all checks manually with `uv run --locked pre-commit run --all-files`.
+The hooks check whitespace and configuration, lint and format Python with Ruff,
+and type-check `src` with mypy. They leave the notebook and source CSVs untouched.
+Pytest is available for future tests; it is not a commit hook while no tests exist.
+
 ## GitHub Codespaces
 
 On GitHub, choose **Code → Codespaces → Create codespace on main**. The devcontainer
-provides Python 3.11 and uv 0.12.1, installs the Python and Jupyter extensions, and
+provides Python 3.15 and uv 0.13.8, installs the Python and Jupyter extensions, and
 runs `uv sync --locked` after creation. Open the notebook and select the workspace
 `.venv/bin/python` kernel. The assignment is not executed automatically.
 
@@ -60,30 +67,3 @@ with a local Docker runtime. The container creates its own Linux environment;
 do not copy a host `.venv` into it. For JupyterLab in a codespace, launch
 `uv run --locked jupyter lab --ip=0.0.0.0 --no-browser` and use the authenticated
 URL through VS Code's private forwarded port. Keep Jupyter's token enabled.
-
-## Coursework and submission
-
-Follow the original notebook for all questions, assumptions, required filenames,
-and grading criteria. Complete the notebook and helper module, explain the code
-and conclusions, and answer the questions explicitly in Markdown cells. The final
-notebook must be executed with its results saved; place the requested CSVs in
-`results/`. Preserve the original layout in the submission ZIP, named after the
-group captain. The notebook states a November 26 deadline and a maximum group
-size of three.
-
-## Local agent workflow
-
-`AGENTS.md` contains shared project instructions. On each development checkout,
-create an ignored `AGENTS.local.md` with these instructions:
-
-```markdown
-# Local process instructions
-
-Store all exploration notes, drafts, designs, implementation plans, reviews,
-execution ledgers, and verification records under `spec/` at the project root.
-Create that directory when needed. Keep it and AGENTS.local.md ignored by Git.
-Use this location instead of skill-default process directories; retain records
-for later sessions. Read the relevant approved design and plan before developing.
-```
-
-These local process files are intentionally absent from the public repository.
