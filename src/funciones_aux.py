@@ -1,10 +1,11 @@
 """Funciones auxiliares del taller de renta fija."""
 
-from typing import cast
 from bisect import bisect_left
-from math import exp, log
+from math import exp
+from typing import cast
 
 import pandas as pd
+
 
 def interpolar_factor(
     plazo_buscado: float,
@@ -12,13 +13,14 @@ def interpolar_factor(
     factores: list[float],
 ) -> float:
     """Obtiene un factor de descuento mediante interpolación exponencial."""
-
     # Primero confirmamos que podemos interpolar, los puntos deberían encontrarse en la curva
     if not plazos:
-        raise ValueError("La curva no contiene puntos.")
+        mensaje = "La curva no contiene puntos."
+        raise ValueError(mensaje)
 
     if plazo_buscado < plazos[0] or plazo_buscado > plazos[-1]:
-        raise ValueError("El plazo buscado está fuera de la curva.")
+        mensaje = "El plazo buscado está fuera de la curva."
+        raise ValueError(mensaje)
 
     # Buscamos los puntos que esten cerca del plazo
     # Con bisect_left obtneemos la posición de donde estaría el plazo en la lista ordenada
@@ -35,29 +37,24 @@ def interpolar_factor(
     factor_anterior = factores[posicion - 1]
     factor_siguiente = factores[posicion]
 
-    # Calculamos los pesos de los puntos previos 
-    peso_siguiente = (
-        (plazo_buscado - plazo_anterior)
-        / (plazo_siguiente - plazo_anterior)
-    )
+    # Calculamos los pesos de los puntos previos
+    peso_siguiente = (plazo_buscado - plazo_anterior) / (plazo_siguiente - plazo_anterior)
 
     peso_anterior = 1 - peso_siguiente
 
     # Formula interpolación exponencial
-    factor_interpolado = (
-        factor_anterior ** peso_anterior
-        * factor_siguiente ** peso_siguiente
-    )
+    factor_interpolado = factor_anterior**peso_anterior * factor_siguiente**peso_siguiente
 
     return float(factor_interpolado)
+
 
 # Funcion base para calcular la valoración de un bono
 def valoracion_bono(
     bono: pd.Series,
-    curva_descuento: pd.DataFrame,  # noqa: ARG001 - pendiente del descuento de flujos
+    curva_descuento: pd.DataFrame,
     fecha_valor: str | pd.Timestamp = "2026-10-01",
     nominal: float = 100,
-    spread: float = 0,  # noqa: ARG001 - pendiente del ajuste por spread (no usado por el momento)
+    spread: float = 0,
 ) -> tuple[float, float, float, pd.DataFrame]:
     """Muestra los flujos pendientes del bono anual del ejemplo de clase.
 
@@ -106,16 +103,20 @@ def valoracion_bono(
     )
 
     if curva.empty:
-        raise ValueError("La curva no contiene datos válidos.")
+        mensaje = "La curva no contiene datos válidos."
+        raise ValueError(mensaje)
 
     if curva["fecha"].duplicated().any():
-        raise ValueError("La curva contiene fechas duplicadas.")
+        mensaje = "La curva contiene fechas duplicadas."
+        raise ValueError(mensaje)
 
     if (curva["factor_descuento"] <= 0).any():
-        raise ValueError("Los factores de descuento deben ser positivos.")
+        mensaje = "Los factores de descuento deben ser positivos."
+        raise ValueError(mensaje)
 
     if curva["fecha"].iloc[0] != fecha:
-        raise ValueError("La curva no corresponde a la fecha de valoración.")
+        mensaje = "La curva no corresponde a la fecha de valoración."
+        raise ValueError(mensaje)
 
     curva["plazo"] = (curva["fecha"] - fecha).dt.days / 365
 
@@ -133,16 +134,13 @@ def valoracion_bono(
 
     # Calculamos el factor con el spread aplicado
     # Si es 0 el spread el ajuste mantiene el factor de descuento directamente
-    flujos["factor_ajustado"] = (
-        flujos["factor_descuento"]
-        * flujos["plazo"].apply(
-            lambda plazo: exp(-spread * plazo)
-        )
+    flujos["factor_ajustado"] = flujos["factor_descuento"] * flujos["plazo"].apply(
+        lambda plazo: exp(-spread * plazo)
     )
 
     # Descontamos cada pago
     # Para ello se multiplica el dinero cobrado en la fecha por el factor de descuento ajustado
-    flujos["valor_actual"] = (flujos["flujo_total"] * flujos["factor_ajustado"])
+    flujos["valor_actual"] = flujos["flujo_total"] * flujos["factor_ajustado"]
 
     # Precio sucio: es el sumatorio del valor de los cobros en cada fecha
     precio_sucio = float(flujos["valor_actual"].sum())
@@ -151,10 +149,9 @@ def valoracion_bono(
     # Primero obtenemos de la fecha con el ultimo cupon pagado los días ya devengados
     dias_devengados = (fecha - ultimo_cupon_pagado).days
 
-    cupon_corrido = (nominal * interes_cupon * dias_devengados / 365)
+    cupon_corrido = nominal * interes_cupon * dias_devengados / 365
 
     # Finalmente obtenemos el precio limpio que es el precio sucio - el cupon corrido
     precio_limpio = precio_sucio - cupon_corrido
 
     return (precio_limpio, precio_sucio, cupon_corrido, flujos)
-
