@@ -42,7 +42,10 @@ def interpolar_factor(
 
     peso_anterior = 1 - peso_siguiente
 
-    # Formula interpolación exponencial
+    # La interpolación es lineal en los logaritmos de los factores.
+    # Forma equivalente con exp y log:
+    # exp(peso_anterior * log(factor_anterior) + peso_siguiente * log(factor_siguiente))
+    # Aplicando exp(a * log(x)) = x**a se obtiene el producto de potencias.
     factor_interpolado = factor_anterior**peso_anterior * factor_siguiente**peso_siguiente
 
     return float(factor_interpolado)
@@ -56,24 +59,45 @@ def valoracion_bono(
     nominal: float = 100,
     spread: float = 0,
 ) -> tuple[float, float, float, pd.DataFrame]:
-    """Muestra los flujos pendientes del bono anual del ejemplo de clase.
-
-    Avance parcial: calcula cupones, amortización final y plazos ACT/365.
-    Todavía no utiliza la curva ni el spread, ni devuelve una valoración.
-    La prueba usa nominal 100 y fecha valor 01/10/2026. El calendario supone
-    cupones anuales regulares; no contempla otros bonos ni fechas call.
-    Se conserva la amortización de 100 del desarrollo original.
-    """
+    """Valora un bono con cupones anuales y plazos ACT/365."""
     fecha = pd.Timestamp(fecha_valor)
     # Importes del cupón: nominal por tipo anual.
     primer_cupon = pd.to_datetime(bono["First Coupon Date"], dayfirst=True)
     vencimiento_cupon = pd.to_datetime(bono["Maturity"], dayfirst=True)
+    # Si el bono es callable, suponemos que se rescata en el próximo call disponible.
+    fecha_call = pd.NaT
+    if str(bono.get("Callable")).strip().upper() == "Y":
+        fecha_call = pd.to_datetime(bono.get("Next Call Date"), dayfirst=True, errors="coerce")
+    # En los bonos perpetuos usamos el próximo call porque no tienen vencimiento.
+    hay_rescate = (
+        pd.notna(fecha_call)
+        and fecha_call > fecha
+        and (pd.isna(vencimiento_cupon) or fecha_call < vencimiento_cupon)
+    )
+    if hay_rescate:
+        vencimiento_cupon = fecha_call
+
+    if pd.isna(vencimiento_cupon):
+        mensaje = f"El bono {bono.get('ISIN')} no tiene vencimiento ni fecha call futura."
+        raise ValueError(mensaje)
+
     interes_cupon = float(bono["Coupon"]) / 100
     importe_cupon = nominal * interes_cupon
     # Calendario de cupones anuales pendientes.
     calendario_cupones = pd.date_range(primer_cupon, vencimiento_cupon, freq=pd.DateOffset(years=1))
     cupones_faltantes = calendario_cupones[calendario_cupones > fecha]
     ultimo_cupon_pagado = calendario_cupones[calendario_cupones <= fecha].max()
+    if hay_rescate and pd.isna(ultimo_cupon_pagado):
+        ultimo_cupon_pagado = pd.to_datetime(bono.get("Issue date"), dayfirst=True)
+
+    # Si el rescate cae entre cupones, añadimos el pago por los días devengados.
+    cupon_final = importe_cupon
+    if hay_rescate and vencimiento_cupon not in calendario_cupones:
+        inicio_devengo = calendario_cupones.max()
+        if pd.isna(inicio_devengo):
+            inicio_devengo = ultimo_cupon_pagado
+        cupon_final = importe_cupon * (vencimiento_cupon - inicio_devengo).days / 365
+        cupones_faltantes = cupones_faltantes.insert(len(cupones_faltantes), vencimiento_cupon)
 
     # Flujos de pago y plazos en años con base ACT/365.
     flujos = pd.DataFrame(
@@ -85,10 +109,10 @@ def valoracion_bono(
     )
     flujos["dias_hasta_pago"] = (flujos["fecha_pago"] - fecha).dt.days
     flujos["plazo"] = flujos["dias_hasta_pago"] / 365
+    if hay_rescate:
+        flujos.iloc[-1, cast("int", flujos.columns.get_loc("cupon"))] = cupon_final
     flujos.iloc[-1, cast("int", flujos.columns.get_loc("amortizacion"))] = nominal
     flujos["flujo_total"] = flujos["cupon"] + flujos["amortizacion"]
-
-    print(flujos)  # noqa: T201 - se conserva para poder hacer pruebas
 
     # Preparamos estructura de curva con factores incluido en el objeto
     curva = curva_descuento.copy()
