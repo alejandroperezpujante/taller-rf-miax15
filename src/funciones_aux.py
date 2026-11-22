@@ -6,6 +6,8 @@ from typing import cast
 
 import pandas as pd
 
+TOLERANCIA_PRECIO = 1e-8
+
 
 def interpolar_factor(
     plazo_buscado: float,
@@ -51,6 +53,105 @@ def interpolar_factor(
     return float(factor_interpolado)
 
 
+def calcular_spread(
+    flujos: pd.DataFrame | None,
+    precio_mercado: float,
+    precio_limpio: float,
+    cupon_corrido: float,
+) -> tuple[float, float]:
+    """Devuelve el z-spread en pb y el precio limpio a partir de los flujos sin spread."""
+    if flujos is None:
+        return float("nan"), float("nan")
+
+    plazos = flujos["plazo"]
+    valores_cero = flujos["valor_actual"]
+    valores = valores_cero
+    z = 0.0
+
+    for _ in range(20):
+        diferencia = precio_mercado - precio_limpio
+        if abs(diferencia) < TOLERANCIA_PRECIO:
+            return z * 10_000, precio_limpio
+
+        pendiente = float(-(plazos * valores).sum())
+        if pendiente == 0:
+            mensaje = "La pendiente del precio respecto al spread es cero."
+            raise ValueError(mensaje)
+
+        z += diferencia / pendiente
+        valores = valores_cero * (-z * plazos).map(exp)
+        precio_limpio = float(valores.sum()) - cupon_corrido
+
+    mensaje = "Newton-Raphson no ha convergido para el z-spread."
+    raise RuntimeError(mensaje)
+
+
+def calcular_yield(
+    flujos: pd.DataFrame | None,
+    precio_sucio_mercado: float,
+    frecuencia: int,
+) -> float:
+    """Calcula la yield anual en tanto por uno, con capitalización por cupón."""
+    if flujos is None:
+        return float("nan")
+
+    periodos = frecuencia * flujos["plazo"]
+    importes = flujos["flujo_total"]
+
+    def precio_sucio(yield_anual: float) -> float:
+        return float((importes / (1 + yield_anual / frecuencia) ** periodos).sum())
+
+    inferior, superior = -0.50, 1.00
+    if not precio_sucio(inferior) >= precio_sucio_mercado >= precio_sucio(superior):
+        mensaje = "La yield está fuera del intervalo de búsqueda."
+        raise ValueError(mensaje)
+
+    for _ in range(50):
+        yield_anual = (inferior + superior) / 2
+        diferencia = precio_sucio(yield_anual) - precio_sucio_mercado
+        if abs(diferencia) < TOLERANCIA_PRECIO:
+            return yield_anual
+        if diferencia > 0:
+            inferior = yield_anual
+        else:
+            superior = yield_anual
+
+    mensaje = "La bisección no ha convergido para la yield."
+    raise RuntimeError(mensaje)
+
+
+def calcular_duracion(
+    flujos: pd.DataFrame | None,
+    y: float,
+    frecuencia: int,
+) -> tuple[float, float]:
+    """Devuelve la duración de Macaulay y la modificada en años."""
+    duracion, duracion_modificada, _ = calcular_sensibilidad(flujos, y, frecuencia)
+    return duracion, duracion_modificada
+
+
+def calcular_sensibilidad(
+    flujos: pd.DataFrame | None,
+    y: float,
+    frecuencia: int,
+) -> tuple[float, float, float]:
+    """Devuelve Macaulay, duración modificada y convexidad a la misma yield."""
+    if flujos is None:
+        return float("nan"), float("nan"), float("nan")
+
+    plazos = flujos["plazo"]
+    base = 1 + y / frecuencia
+    valores = flujos["flujo_total"] / base ** (frecuencia * plazos)
+    precio_sucio = float(valores.sum())
+
+    duracion = float((plazos * valores).sum()) / precio_sucio
+    duracion_modificada = duracion / base
+    convexidad = float((plazos * (plazos + 1 / frecuencia) * valores).sum()) / (
+        precio_sucio * base**2
+    )
+    return duracion, duracion_modificada, convexidad
+
+
 # Funcion base para calcular la valoración de un bono
 def valoracion_bono(
     bono: pd.Series,
@@ -59,7 +160,7 @@ def valoracion_bono(
     nominal: float = 100,
     spread: float = 0,
 ) -> tuple[float, float, float, pd.DataFrame]:
-    """Valora un bono con cupones anuales y plazos ACT/365."""
+    """Devuelve los precios limpio y sucio, el cupón corrido y los flujos ACT/365."""
     fecha = pd.Timestamp(fecha_valor)
     # Importes del cupón: nominal por tipo anual.
     primer_cupon = pd.to_datetime(bono["First Coupon Date"], dayfirst=True)
@@ -81,22 +182,28 @@ def valoracion_bono(
         mensaje = f"El bono {bono.get('ISIN')} no tiene vencimiento ni fecha call futura."
         raise ValueError(mensaje)
 
+    frecuencia = float(bono.get("Coupon Frequency", 1))
+    if frecuencia <= 0 or 12 % frecuencia != 0:
+        mensaje = f"Frecuencia de cupón no admitida para {bono.get('ISIN')}: {frecuencia}."
+        raise ValueError(mensaje)
+
     interes_cupon = float(bono["Coupon"]) / 100
-    importe_cupon = nominal * interes_cupon
-    # Calendario de cupones anuales pendientes.
-    calendario_cupones = pd.date_range(primer_cupon, vencimiento_cupon, freq=pd.DateOffset(years=1))
+    cupon_anual = nominal * interes_cupon
+    importe_cupon = cupon_anual / frecuencia
+    periodo_cupon = pd.DateOffset(months=12 // int(frecuencia))
+    calendario_cupones = pd.date_range(primer_cupon, vencimiento_cupon, freq=periodo_cupon)
     cupones_faltantes = calendario_cupones[calendario_cupones > fecha]
     ultimo_cupon_pagado = calendario_cupones[calendario_cupones <= fecha].max()
-    if hay_rescate and pd.isna(ultimo_cupon_pagado):
+    if pd.isna(ultimo_cupon_pagado):
         ultimo_cupon_pagado = pd.to_datetime(bono.get("Issue date"), dayfirst=True)
 
-    # Si el rescate cae entre cupones, añadimos el pago por los días devengados.
+    # Si la amortización cae entre cupones, añadimos un último pago prorrateado.
     cupon_final = importe_cupon
-    if hay_rescate and vencimiento_cupon not in calendario_cupones:
+    if vencimiento_cupon not in calendario_cupones:
         inicio_devengo = calendario_cupones.max()
         if pd.isna(inicio_devengo):
             inicio_devengo = ultimo_cupon_pagado
-        cupon_final = importe_cupon * (vencimiento_cupon - inicio_devengo).days / 365
+        cupon_final = cupon_anual * (vencimiento_cupon - inicio_devengo).days / 365
         cupones_faltantes = cupones_faltantes.insert(len(cupones_faltantes), vencimiento_cupon)
 
     # Flujos de pago y plazos en años con base ACT/365.
@@ -109,8 +216,7 @@ def valoracion_bono(
     )
     flujos["dias_hasta_pago"] = (flujos["fecha_pago"] - fecha).dt.days
     flujos["plazo"] = flujos["dias_hasta_pago"] / 365
-    if hay_rescate:
-        flujos.iloc[-1, cast("int", flujos.columns.get_loc("cupon"))] = cupon_final
+    flujos.iloc[-1, cast("int", flujos.columns.get_loc("cupon"))] = cupon_final
     flujos.iloc[-1, cast("int", flujos.columns.get_loc("amortizacion"))] = nominal
     flujos["flujo_total"] = flujos["cupon"] + flujos["amortizacion"]
 
@@ -173,7 +279,7 @@ def valoracion_bono(
     # Primero obtenemos de la fecha con el ultimo cupon pagado los días ya devengados
     dias_devengados = (fecha - ultimo_cupon_pagado).days
 
-    cupon_corrido = nominal * interes_cupon * dias_devengados / 365
+    cupon_corrido = cupon_anual * dias_devengados / 365
 
     # Finalmente obtenemos el precio limpio que es el precio sucio - el cupon corrido
     precio_limpio = precio_sucio - cupon_corrido
