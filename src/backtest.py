@@ -81,7 +81,7 @@ def _rentabilidades_bono(
     bono: pd.Series,
     precios: pd.Series[float],
     fechas: pd.DatetimeIndex,
-    limites_cotizacion: Mapping[pd.Timestamp, pd.Timestamp],
+    precios_rebalanceo: pd.Series[float],
     confirmada: SalidaBono | None,
 ) -> pd.Series:
     rentabilidades: dict[pd.Timestamp, float] = {}
@@ -94,23 +94,23 @@ def _rentabilidades_bono(
         primer_cupon, fin_calendario, freq=pd.DateOffset(months=12 // frecuencia)
     )
     precios = precios.dropna().loc[emision:]
+    precios_rebalanceo = precios_rebalanceo.dropna()
     salida = _resolver_salida(bono, confirmada)
     fecha_call = pd.Timestamp(pd.to_datetime(bono["Next Call Date"], format="%d/%m/%Y"))
 
     for inicio, fin in pairwise(fechas):
         if salida is not None and salida.fecha <= inicio:
             break
-        posicion_inicio = int(precios.index.searchsorted(inicio, side="right")) - 1
-        if posicion_inicio < 0 or precios.index[posicion_inicio] < limites_cotizacion[inicio]:
+        if inicio not in precios_rebalanceo.index:
             continue
 
         pagados_inicio, corrido_inicio = _cupones_y_corrido(
             inicio, calendario, emision, cupon_anual, frecuencia
         )
-        precio_inicio = float(precios.iloc[posicion_inicio]) + corrido_inicio
+        precio_inicio = precios_rebalanceo.loc[inicio] + corrido_inicio
         posicion = int(precios.index.searchsorted(fin, side="right")) - 1
         ultima_cotizacion = precios.index[posicion]
-        cierre_reciente = ultima_cotizacion >= limites_cotizacion[fin]
+        cierre_reciente = fin in precios_rebalanceo.index
 
         # Una fecha prevista precisa evidencia de cese de cotización para inferir el call.
         if (
@@ -130,24 +130,25 @@ def _rentabilidades_bono(
             pagados_fin, corrido_fin = _cupones_y_corrido(
                 fecha_valoracion, calendario, emision, cupon_anual, frecuencia
             )
-            valor_final = float(precios.iloc[posicion]) + corrido_fin + pagados_fin
+            mid_final = (
+                precios_rebalanceo.loc[fin] if cierre_reciente else float(precios.iloc[posicion])
+            )
+            valor_final = mid_final + corrido_fin + pagados_fin
 
         rentabilidades[fin] = (valor_final - pagados_inicio) / precio_inicio - 1
 
     return pd.Series(rentabilidades, dtype=float).reindex(fechas[1:])
 
 
-def backtest_equiponderado(
+def preparar_precios_rebalanceo(
     universo: pd.DataFrame,
     precios_mid: pd.DataFrame,
     benchmark: pd.Series,
-    salidas_confirmadas: Mapping[str, SalidaBono] | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Calcula rentabilidades mensuales en decimal y pesos al inicio de cada periodo."""
-    benchmark = benchmark.dropna().sort_index()
+) -> pd.DataFrame:
+    """Prepara los MID mensuales con una sesión de tolerancia y sin precios preemisión."""
     precios_mid = precios_mid.sort_index(axis=1)
     fechas_comunes = pd.DatetimeIndex(
-        benchmark.index.intersection(precios_mid.columns)
+        benchmark.dropna().index.intersection(precios_mid.columns)
     ).sort_values()
     fechas = pd.DatetimeIndex(
         fechas_comunes.to_series().groupby(fechas_comunes.to_period("M")).min()
@@ -156,19 +157,46 @@ def backtest_equiponderado(
         mensaje = "El backtest necesita al menos dos meses de precios comunes."
         raise ValueError(mensaje)
 
-    # Admitimos el MID de la sesión común inmediatamente anterior, sin mirar hacia delante.
-    limites_cotizacion = {
-        fecha: fechas_comunes[max(0, int(posicion) - 1)]
-        for fecha, posicion in zip(fechas, fechas_comunes.get_indexer(fechas), strict=True)
-    }
+    emisiones = pd.to_datetime(universo.set_index("ISIN")["Issue date"], format="%d/%m/%Y")
+    emisiones = emisiones.reindex(precios_mid.index)
+    precios_mensuales = {}
+    for fecha, posicion in zip(fechas, fechas_comunes.get_indexer(fechas), strict=True):
+        anterior = fechas_comunes[max(0, int(posicion) - 1)]
+        ventana = precios_mid.loc[:, anterior:fecha]
+        # Enmascarar cada fecha antes de rellenar evita usar un MID previo a la emisión.
+        validos = pd.DataFrame(
+            {
+                dia: ventana[dia].where(emisiones.le(dia))
+                for dia in pd.DatetimeIndex(ventana.columns)
+            }
+        )
+        precios_mensuales[fecha] = validos.ffill(axis=1).iloc[:, -1]
+
+    return pd.DataFrame(precios_mensuales)
+
+
+def backtest_equiponderado(
+    universo: pd.DataFrame,
+    precios_mid: pd.DataFrame,
+    benchmark: pd.Series,
+    salidas_confirmadas: Mapping[str, SalidaBono] | None = None,
+    *,
+    precios_rebalanceo: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Calcula rentabilidades mensuales en decimal y pesos al inicio de cada periodo."""
+    precios_mid = precios_mid.sort_index(axis=1)
+    if precios_rebalanceo is None:
+        precios_rebalanceo = preparar_precios_rebalanceo(universo, precios_mid, benchmark)
+    fechas = pd.DatetimeIndex(precios_rebalanceo.columns)
 
     salidas = salidas_confirmadas or {}
     por_bono = {}
     for _, bono in universo.iterrows():
         isin = str(bono["ISIN"])
         cotizaciones = cast("pd.Series[float]", precios_mid.loc[isin])
+        cotizaciones_rebalanceo = cast("pd.Series[float]", precios_rebalanceo.loc[isin])
         por_bono[isin] = _rentabilidades_bono(
-            bono, cotizaciones, fechas, limites_cotizacion, salidas.get(isin)
+            bono, cotizaciones, fechas, cotizaciones_rebalanceo, salidas.get(isin)
         )
 
     rentabilidades = pd.DataFrame(por_bono)
