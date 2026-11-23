@@ -1,0 +1,22 @@
+Característica,Observaciones,Datos missing,Valores únicos,Mínimo,Máximo
+Ask Price,2165,0,2163,43.34221,121.6583
+Bid Price,2165,0,2162,42.8634,121.1417
+Callable,2165,0,2,,
+Ccy,2165,0,1,,
+Coupon,2165,0,314,0.0,9.875
+Coupon Frequency,2165,0,2,1.0,2.0
+Coupon Type,2165,0,2,,
+Description,2165,0,2163,,
+First Coupon Date,2165,0,1142,,
+ISIN,2165,0,2165,,
+Industry Sector,2165,0,9,,
+Issue date,2165,0,1007,,
+Issuer,2165,0,605,,
+Maturity,2147,18,1438,,
+Next Call Date,1582,583,1159,,
+Outstanding Amount,2165,0,131,250003000.0,3000000000.0
+PD 1YR,2142,23,543,2.94464e-12,0.063121921
+Penultimate Coupon Date,2147,18,1455,,
+Price,2165,0,2164,43.1028,121.4
+Rating,2162,3,12,,
+Seniority,2165,0,7,,

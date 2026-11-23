@@ -216,3 +216,35 @@ def backtest_equiponderado(
         }
     )
     return resultados, pesos
+
+
+def cobros_mandato(
+    universo: pd.DataFrame,
+    inicio: pd.Timestamp,
+    fin: pd.Timestamp,
+    salidas_confirmadas: Mapping[str, SalidaBono] | None = None,
+) -> pd.DataFrame:
+    """Pagos por 100 en (inicio, fin], con cupón final incluido en la salida."""
+    filas: list[tuple[pd.Timestamp, str, str, float]] = []
+    salidas = salidas_confirmadas or {}
+    for _, bono in universo.iterrows():
+        isin = str(bono["ISIN"])
+        salida = _resolver_salida(bono, salidas.get(isin))
+        limite = min(fin, salida.fecha) if salida else fin
+        if limite <= inicio:
+            continue
+        primero = pd.to_datetime(bono["First Coupon Date"], format="%d/%m/%Y")
+        emision = pd.to_datetime(bono["Issue date"], format="%d/%m/%Y")
+        frecuencia = int(bono["Coupon Frequency"])
+        anual = float(bono["Coupon"])
+        calendario = pd.date_range(primero, limite, freq=pd.DateOffset(months=12 // frecuencia))
+        filas.extend(
+            (fecha, isin, "cupon", anual / frecuencia)
+            for fecha in calendario[calendario > inicio]
+            if salida is None or fecha < salida.fecha
+        )
+        if salida and salida.fecha <= fin:
+            anteriores = calendario.searchsorted(salida.fecha, side="left")
+            pago = _flujos_hasta_salida(salida, calendario, emision, anual, frecuencia)
+            filas.append((salida.fecha, isin, salida.tipo, pago - anteriores * anual / frecuencia))
+    return pd.DataFrame(filas, columns=["Fecha", "ISIN", "Tipo", "Importe"])
