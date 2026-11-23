@@ -1,0 +1,3 @@
+Escenario,Futuro,CoberturaObjetivoPct,CoberturaEfectivaPct,ContratosVenta,PVBPResidual,CapitalReferencia
+Con calls,Schatz,75,84.64959409668354,3,10.959643946289205,10000000
+Sin calls,Schatz,75,74.94267587399055,106,713.9890755267475,10000000
