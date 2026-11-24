@@ -72,7 +72,7 @@ def calcular_spread(
     # Eligimos este método porque nos facilita su aplicación partiendo de los resultados del apartado anterior, 
     # y porque converge rápidamente en la mayoría de los casos.
     for _ in range(20):
-        # Calculamos el precio limpio con el z-spread actual.
+        # Calculamos la diferencia entre el precio de mercado y el precio limpio calculado con el z-spread actual.
         diferencia = precio_mercado - precio_limpio
         # Fijamos un criterio de convergencia del método basado en el punto anterior y una tolerancia
         if abs(diferencia) < TOLERANCIA_PRECIO:
@@ -100,18 +100,22 @@ def calcular_yield(
     """Calcula la yield anual en tanto por uno, con capitalización por cupón."""
     if flujos is None:
         return float("nan")
-
+    # Obtenemos los periodos de pago y sus importes
     periodos = frecuencia * flujos["plazo"]
     importes = flujos["flujo_total"]
 
+    # Calculamos el precio sucio partiendo de la yield anual
     def precio_sucio(yield_anual: float) -> float:
         return float((importes / (1 + yield_anual / frecuencia) ** periodos).sum())
 
+    # Fijamos un límite inferior y superior para buscar la yield
+    # Con esto buscaremos una yield que haga que nuestro precio sucio calculado coincida con el sucio del mercado
     inferior, superior = -0.50, 1.00
     if not precio_sucio(inferior) >= precio_sucio_mercado >= precio_sucio(superior):
         mensaje = "La yield está fuera del intervalo de búsqueda."
         raise ValueError(mensaje)
 
+    # Aproximamos la yield mediante el método de la bisección 
     for _ in range(50):
         yield_anual = (inferior + superior) / 2
         diferencia = precio_sucio(yield_anual) - precio_sucio_mercado
@@ -141,15 +145,19 @@ def calcular_sensibilidad(
     y: float,
     frecuencia: int,
 ) -> tuple[float, float, float]:
-    """Devuelve Macaulay, duración modificada y convexidad a la misma yield."""
+    """Devuelve la duración deMacaulay, duración modificada y convexidad a la misma yield."""
     if flujos is None:
         return float("nan"), float("nan"), float("nan")
 
+
     plazos = flujos["plazo"]
+    # Preparamos la derivada de Macaulay para la DurMod y la convexidad
     base = 1 + y / frecuencia
+    # Calculamos el VA de cada flujo a la yield dada
     valores = flujos["flujo_total"] / base ** (frecuencia * plazos)
     precio_sucio = float(valores.sum())
 
+    # Obtenemos la duración de Macaulay, la modificada, y la convexidad
     duracion = float((plazos * valores).sum()) / precio_sucio
     duracion_modificada = duracion / base
     convexidad = float((plazos * (plazos + 1 / frecuencia) * valores).sum()) / (
