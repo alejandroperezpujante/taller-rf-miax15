@@ -4,7 +4,7 @@ from math import nan
 
 import pandas as pd
 import pytest
-from src.backtest import SalidaBono, backtest_equiponderado
+from src.backtest import SalidaBono, backtest_equiponderado, limpiar_precios_historicos
 
 
 def _bono(isin: str, **datos: str | float | None) -> dict[str, str | float | None]:
@@ -108,3 +108,46 @@ def test_rebalanceo_con_el_mid_de_la_sesion_anterior() -> None:
             cierre_marzo / cierre_febrero - 1,
         ]
     )
+
+
+def test_limpieza_fechas_mid_y_vida_de_emision() -> None:
+    """Clean quotes without treating an indicative call as a confirmed exit."""
+    universo = pd.DataFrame(
+        [
+            _bono("nueva", **{"Issue date": "02/01/2024"}),
+            _bono("vence", Maturity="03/01/2024"),
+            _bono("sale"),
+            _bono("prevista", Callable="Y", **{"Next Call Date": "03/01/2024"}),
+            _bono("fecha_invalida", **{"Issue date": "31/02/2024"}),
+        ]
+    )
+    bruto = pd.DataFrame(
+        [
+            [99, "101.5", 0, "texto", "inf", 100],
+            [103, 102, 101, 100, 99, 80],
+            [101, 102, 103, 104, 105, 80],
+            [100, 101, 102, 103, 104, 80],
+            [100, 101, 102, 103, 104, 80],
+        ],
+        index=universo["ISIN"],
+        columns=[
+            "01/01/2024",
+            "02/01/2024",
+            "03/01/2024",
+            "04/01/2024",
+            "05/01/2024",
+            "31/02/2024",
+        ],
+    )
+    call = SalidaBono(pd.Timestamp("2024-01-04"), "call", 100)
+
+    limpio, resumen = limpiar_precios_historicos(universo, bruto, {"sale": call})
+
+    assert limpio.shape == (5, 5)
+    assert limpio.loc["nueva"].dropna().tolist() == [101.5]
+    assert limpio.loc["vence"].dropna().tolist() == [103, 102]
+    assert limpio.loc["sale"].dropna().tolist() == [101, 102, 103]
+    assert limpio.loc["prevista"].notna().sum() == 5
+    assert limpio.loc["fecha_invalida"].isna().all()
+    assert resumen.tolist() == [1, 3, 1, 1, 2]
+    assert bruto.shape == (5, 6)

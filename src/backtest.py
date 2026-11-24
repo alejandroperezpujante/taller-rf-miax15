@@ -84,6 +84,10 @@ def _rentabilidades_bono(
     precios_rebalanceo: pd.Series[float],
     confirmada: SalidaBono | None,
 ) -> pd.Series:
+    precios_rebalanceo = precios_rebalanceo.dropna()
+    if precios_rebalanceo.empty:
+        return pd.Series(index=fechas[1:], dtype=float)
+
     rentabilidades: dict[pd.Timestamp, float] = {}
     emision = pd.Timestamp(pd.to_datetime(bono["Issue date"], format="%d/%m/%Y"))
     primer_cupon = pd.to_datetime(bono["First Coupon Date"], format="%d/%m/%Y")
@@ -94,9 +98,10 @@ def _rentabilidades_bono(
         primer_cupon, fin_calendario, freq=pd.DateOffset(months=12 // frecuencia)
     )
     precios = precios.dropna().loc[emision:]
-    precios_rebalanceo = precios_rebalanceo.dropna()
     salida = _resolver_salida(bono, confirmada)
-    fecha_call = pd.Timestamp(pd.to_datetime(bono["Next Call Date"], format="%d/%m/%Y"))
+    fecha_call = pd.Timestamp(
+        pd.to_datetime(bono["Next Call Date"], format="%d/%m/%Y", errors="coerce")
+    )
 
     for inicio, fin in pairwise(fechas):
         if salida is not None and salida.fecha <= inicio:
@@ -138,6 +143,56 @@ def _rentabilidades_bono(
         rentabilidades[fin] = (valor_final - pagados_inicio) / precio_inicio - 1
 
     return pd.Series(rentabilidades, dtype=float).reindex(fechas[1:])
+
+
+def limpiar_precios_historicos(
+    universo: pd.DataFrame,
+    precios_mid: pd.DataFrame,
+    salidas_confirmadas: Mapping[str, SalidaBono] | None = None,
+) -> tuple[pd.DataFrame, pd.Series[int]]:
+    """Descarta fechas inválidas y enmascara MID inválidos o fuera de la vida del bono."""
+    fechas = pd.to_datetime(precios_mid.columns, format="%d/%m/%Y", errors="coerce")
+    fechas_validas = fechas.notna()
+    historico = precios_mid.loc[:, fechas_validas].set_axis(fechas[fechas_validas], axis=1)
+    historico = historico.sort_index(axis=1)
+    if historico.columns.has_duplicates:
+        mensaje = "El histórico de precios contiene fechas duplicadas."
+        raise ValueError(mensaje)
+
+    bonos = universo.set_index("ISIN").reindex(historico.index)
+    emisiones = pd.to_datetime(bonos["Issue date"], format="%d/%m/%Y", errors="coerce")
+    vencimientos = pd.to_datetime(bonos["Maturity"], format="%d/%m/%Y", errors="coerce")
+    vida_valida = emisiones.notna() & (bonos["Maturity"].isna() | vencimientos.gt(emisiones))
+
+    fechas_fin = vencimientos.to_dict()
+    for isin, salida in (salidas_confirmadas or {}).items():
+        fin = fechas_fin.get(isin, pd.NaT)
+        if pd.isna(fin) or salida.fecha < fin:
+            fechas_fin[isin] = salida.fecha
+    fin_vida = pd.Series(fechas_fin, dtype="datetime64[ns]").reindex(historico.index)
+
+    numericos = historico.apply(pd.to_numeric, errors="coerce")
+    mid_valido = numericos.gt(0) & numericos.lt(float("inf"))
+    limpia = {}
+    antes_emision = pd.Series(data=False, index=historico.index)
+    desde_salida = pd.Series(data=False, index=historico.index)
+    for fecha in pd.DatetimeIndex(historico.columns):
+        antes = emisiones.gt(fecha)
+        despues = fin_vida.le(fecha)
+        antes_emision |= mid_valido[fecha] & antes
+        desde_salida |= mid_valido[fecha] & despues
+        limpia[fecha] = numericos[fecha].where(mid_valido[fecha] & vida_valida & ~antes & ~despues)
+
+    recuentos = {
+        "Columnas con fecha inválida": len(fechas) - len(historico.columns),
+        "MID no numéricos, no positivos o infinitos": int(
+            (historico.notna() & ~mid_valido).sum().sum()
+        ),
+        "Bonos con fechas de vida inválidas": int((~vida_valida).sum()),
+        "Bonos con MID antes de la emisión": int(antes_emision.sum()),
+        "Bonos con MID desde el vencimiento o la salida": int(desde_salida.sum()),
+    }
+    return pd.DataFrame(limpia, index=historico.index), pd.Series(recuentos, name="Recuento")
 
 
 def preparar_precios_rebalanceo(
@@ -216,35 +271,3 @@ def backtest_equiponderado(
         }
     )
     return resultados, pesos
-
-
-def cobros_mandato(
-    universo: pd.DataFrame,
-    inicio: pd.Timestamp,
-    fin: pd.Timestamp,
-    salidas_confirmadas: Mapping[str, SalidaBono] | None = None,
-) -> pd.DataFrame:
-    """Pagos por 100 en (inicio, fin], con cupón final incluido en la salida."""
-    filas: list[tuple[pd.Timestamp, str, str, float]] = []
-    salidas = salidas_confirmadas or {}
-    for _, bono in universo.iterrows():
-        isin = str(bono["ISIN"])
-        salida = _resolver_salida(bono, salidas.get(isin))
-        limite = min(fin, salida.fecha) if salida else fin
-        if limite <= inicio:
-            continue
-        primero = pd.to_datetime(bono["First Coupon Date"], format="%d/%m/%Y")
-        emision = pd.to_datetime(bono["Issue date"], format="%d/%m/%Y")
-        frecuencia = int(bono["Coupon Frequency"])
-        anual = float(bono["Coupon"])
-        calendario = pd.date_range(primero, limite, freq=pd.DateOffset(months=12 // frecuencia))
-        filas.extend(
-            (fecha, isin, "cupon", anual / frecuencia)
-            for fecha in calendario[calendario > inicio]
-            if salida is None or fecha < salida.fecha
-        )
-        if salida and salida.fecha <= fin:
-            anteriores = calendario.searchsorted(salida.fecha, side="left")
-            pago = _flujos_hasta_salida(salida, calendario, emision, anual, frecuencia)
-            filas.append((salida.fecha, isin, salida.tipo, pago - anteriores * anual / frecuencia))
-    return pd.DataFrame(filas, columns=["Fecha", "ISIN", "Tipo", "Importe"])
