@@ -69,7 +69,7 @@ def calcular_spread(
     z = 0.0
 
     # Usamos el método de Newton-Raphson para aproximar el z-spread que hace que el precio limpio coincida con el precio de mercado.
-    # Eligimos este método porque nos facilita su aplicación partiendo de los resultados del apartado anterior, 
+    # Eligimos este método porque nos facilita su aplicación partiendo de los resultados del apartado anterior,
     # y porque converge rápidamente en la mayoría de los casos.
     for _ in range(20):
         # Calculamos la diferencia entre el precio de mercado y el precio limpio calculado con el z-spread actual.
@@ -115,7 +115,7 @@ def calcular_yield(
         mensaje = "La yield está fuera del intervalo de búsqueda."
         raise ValueError(mensaje)
 
-    # Aproximamos la yield mediante el método de la bisección 
+    # Aproximamos la yield mediante el método de la bisección
     for _ in range(50):
         yield_anual = (inferior + superior) / 2
         diferencia = precio_sucio(yield_anual) - precio_sucio_mercado
@@ -148,7 +148,6 @@ def calcular_sensibilidad(
     """Devuelve la duración deMacaulay, duración modificada y convexidad a la misma yield."""
     if flujos is None:
         return float("nan"), float("nan"), float("nan")
-
 
     plazos = flujos["plazo"]
     # Preparamos la derivada de Macaulay para la DurMod y la convexidad

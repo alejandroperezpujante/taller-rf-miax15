@@ -24,6 +24,9 @@ dev = [
 [tool.uv]
 package = false
 
+[tool.pytest]
+pythonpath = ["."]
+
 [tool.ruff]
 line-length = 100
 target-version = "py315"
