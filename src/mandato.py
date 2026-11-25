@@ -4,6 +4,8 @@ import pandas as pd
 import pulp  # type: ignore[import-untyped]
 
 RATINGS_IG = frozenset(["AAA", "AA+", "AA", "AA-", "A+", "A", "A-", "BBB+", "BBB", "BBB-"])
+RATINGS_HY = frozenset(["BB+", "BB", "BB-", "B+", "B", "B-", "CCC+", "CCC", "CCC-", "CC", "C", "D"])
+
 SENIOR = frozenset({"Sr Unsecured", "Sr Preferred", "Sr Non Preferred", "Secured", "1st lien"})
 MAX_BONOS = 20
 MAX_DURACION = 3
