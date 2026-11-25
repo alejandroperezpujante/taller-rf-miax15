@@ -32,7 +32,8 @@ extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["COM812", "CPY001", "D203", "D213", "ISC001"]
+# Allow long coursework comments and docstrings while keeping the formatter's width target.
+ignore = ["COM812", "CPY001", "D203", "D213", "E501", "ISC001"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["PLR2004", "S101"]

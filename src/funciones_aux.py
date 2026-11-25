@@ -68,16 +68,22 @@ def calcular_spread(
     valores = valores_cero
     z = 0.0
 
+    # Usamos el método de Newton-Raphson para aproximar el z-spread que hace que el precio limpio coincida con el precio de mercado.
+    # Eligimos este método porque nos facilita su aplicación partiendo de los resultados del apartado anterior, 
+    # y porque converge rápidamente en la mayoría de los casos.
     for _ in range(20):
+        # Calculamos la diferencia entre el precio de mercado y el precio limpio calculado con el z-spread actual.
         diferencia = precio_mercado - precio_limpio
+        # Fijamos un criterio de convergencia del método basado en el punto anterior y una tolerancia
         if abs(diferencia) < TOLERANCIA_PRECIO:
             return z * 10_000, precio_limpio
 
+        # Calculamos la pendiente del precio respecto al spread, que es la derivada del precio limpio con respecto al z-spread.
         pendiente = float(-(plazos * valores).sum())
         if pendiente == 0:
             mensaje = "La pendiente del precio respecto al spread es cero."
             raise ValueError(mensaje)
-
+        # Actualizamos el z-spread usando la fórmula de Newton-Raphson: z = z - f(z)/f'(z), donde f(z) es la diferencia entre el precio de mercado y el precio limpio.
         z += diferencia / pendiente
         valores = valores_cero * (-z * plazos).map(exp)
         precio_limpio = float(valores.sum()) - cupon_corrido
@@ -94,18 +100,22 @@ def calcular_yield(
     """Calcula la yield anual en tanto por uno, con capitalización por cupón."""
     if flujos is None:
         return float("nan")
-
+    # Obtenemos los periodos de pago y sus importes
     periodos = frecuencia * flujos["plazo"]
     importes = flujos["flujo_total"]
 
+    # Calculamos el precio sucio partiendo de la yield anual
     def precio_sucio(yield_anual: float) -> float:
         return float((importes / (1 + yield_anual / frecuencia) ** periodos).sum())
 
+    # Fijamos un límite inferior y superior para buscar la yield
+    # Con esto buscaremos una yield que haga que nuestro precio sucio calculado coincida con el sucio del mercado
     inferior, superior = -0.50, 1.00
     if not precio_sucio(inferior) >= precio_sucio_mercado >= precio_sucio(superior):
         mensaje = "La yield está fuera del intervalo de búsqueda."
         raise ValueError(mensaje)
 
+    # Aproximamos la yield mediante el método de la bisección 
     for _ in range(50):
         yield_anual = (inferior + superior) / 2
         diferencia = precio_sucio(yield_anual) - precio_sucio_mercado
@@ -135,15 +145,19 @@ def calcular_sensibilidad(
     y: float,
     frecuencia: int,
 ) -> tuple[float, float, float]:
-    """Devuelve Macaulay, duración modificada y convexidad a la misma yield."""
+    """Devuelve la duración deMacaulay, duración modificada y convexidad a la misma yield."""
     if flujos is None:
         return float("nan"), float("nan"), float("nan")
 
+
     plazos = flujos["plazo"]
+    # Preparamos la derivada de Macaulay para la DurMod y la convexidad
     base = 1 + y / frecuencia
+    # Calculamos el VA de cada flujo a la yield dada
     valores = flujos["flujo_total"] / base ** (frecuencia * plazos)
     precio_sucio = float(valores.sum())
 
+    # Obtenemos la duración de Macaulay, la modificada, y la convexidad
     duracion = float((plazos * valores).sum()) / precio_sucio
     duracion_modificada = duracion / base
     convexidad = float((plazos * (plazos + 1 / frecuencia) * valores).sum()) / (
@@ -175,13 +189,16 @@ def valoracion_bono(
         and fecha_call > fecha
         and (pd.isna(vencimiento_cupon) or fecha_call < vencimiento_cupon)
     )
+    # Si hay rescate de un bono igualamos el vencimiento al call para calcular los flujos.
     if hay_rescate:
         vencimiento_cupon = fecha_call
 
+    # Controlamos bonos sin fecha de vencimiento ni call, no se van a poder valorar.
     if pd.isna(vencimiento_cupon):
         mensaje = f"El bono {bono.get('ISIN')} no tiene vencimiento ni fecha call futura."
         raise ValueError(mensaje)
 
+    # Controlamos la frecuencia del cupón, debe ser positiva y divisible entre 12 para poder calcular los flujos.
     frecuencia = float(bono.get("Coupon Frequency", 1))
     if frecuencia <= 0 or 12 % frecuencia != 0:
         mensaje = f"Frecuencia de cupón no admitida para {bono.get('ISIN')}: {frecuencia}."
@@ -191,13 +208,15 @@ def valoracion_bono(
     cupon_anual = nominal * interes_cupon
     importe_cupon = cupon_anual / frecuencia
     periodo_cupon = pd.DateOffset(months=12 // int(frecuencia))
+    # Obtenemos el calendario de cupones y filtramos los cupones ya amortizados
     calendario_cupones = pd.date_range(primer_cupon, vencimiento_cupon, freq=periodo_cupon)
     cupones_faltantes = calendario_cupones[calendario_cupones > fecha]
+    # Obtenemos la fecha del último cupón pagado, y si no se usa la fecha de emisión
     ultimo_cupon_pagado = calendario_cupones[calendario_cupones <= fecha].max()
     if pd.isna(ultimo_cupon_pagado):
         ultimo_cupon_pagado = pd.to_datetime(bono.get("Issue date"), dayfirst=True)
 
-    # Si la amortización cae entre cupones, añadimos un último pago prorrateado.
+    # Si la amortización cae entre cupones, añadimos un último pago prorrateado, calculando los devengos.
     cupon_final = importe_cupon
     if vencimiento_cupon not in calendario_cupones:
         inicio_devengo = calendario_cupones.max()
@@ -217,6 +236,7 @@ def valoracion_bono(
     flujos["dias_hasta_pago"] = (flujos["fecha_pago"] - fecha).dt.days
     flujos["plazo"] = flujos["dias_hasta_pago"] / 365
     flujos.iloc[-1, cast("int", flujos.columns.get_loc("cupon"))] = cupon_final
+    # Si el último pago es un vencimiento, añadimos la amortización del nominal.
     flujos.iloc[-1, cast("int", flujos.columns.get_loc("amortizacion"))] = nominal
     flujos["flujo_total"] = flujos["cupon"] + flujos["amortizacion"]
 
@@ -232,6 +252,7 @@ def valoracion_bono(
         .reset_index(drop=True)
     )
 
+    # Validamos la curva de descuento para asegurarnos datos válidos
     if curva.empty:
         mensaje = "La curva no contiene datos válidos."
         raise ValueError(mensaje)
