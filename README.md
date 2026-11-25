@@ -12,7 +12,7 @@ tooling; the exercises have not been completed.
 - `src/funciones_aux.py`: partial classroom development generating the example bond's cash flows; discounting and full valuation remain pending.
 - `data/`: four original CSV inputs (bond universe, bond prices, €STR curve,
   and other market series). Keep these files unchanged.
-- `results/`: destination for the CSV deliverables requested in the notebook.
+- `results/`: CSV deliverables, grouped into `apartado-1/` through `apartado-9/`.
 
 CSVs use UTF-8 without a BOM, LF line endings, semicolons, and `#N/D`
 missing-value markers where present. Select parsing options explicitly when
@@ -51,7 +51,8 @@ Open `src/analisis_cartera.ipynb` and select the kernel for this project's `.ven
 (`.venv/bin/python`, or `.venv\Scripts\python.exe` on Windows). With VS Code,
 use **Select Kernel → Python Environments**. In JupyterLab launched through the
 command above, select its Python 3 kernel. Keep file paths relative to the
-notebook's directory: inputs are in `../data/`, results in `../results/`.
+notebook's directory: inputs are in `../data/`, and each exercise writes to
+`../results/apartado-N/`.
 
 ```sh
 uv lock --check
