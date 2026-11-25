@@ -46,7 +46,7 @@ def interpolar_factor(
 
     # La interpolación es lineal en los logaritmos de los factores.
     # Forma equivalente con exp y log:
-    # exp(peso_anterior * log(factor_anterior) + peso_siguiente * log(factor_siguiente))
+    # exp(peso_anterior * log(factor_anterior) + peso_siguiente * log(factor_siguiente))  # noqa: ERA001
     # Aplicando exp(a * log(x)) = x**a se obtiene el producto de potencias.
     factor_interpolado = factor_anterior**peso_anterior * factor_siguiente**peso_siguiente
 
@@ -166,7 +166,8 @@ def calcular_sensibilidad(
 
 
 # Funcion base para calcular la valoración de un bono
-def valoracion_bono(
+# Conservamos el cálculo docente en un único bloque para seguir sus pasos en orden.
+def valoracion_bono(  # noqa: C901, PLR0915
     bono: pd.Series,
     curva_descuento: pd.DataFrame,
     fecha_valor: str | pd.Timestamp = "2026-10-01",
@@ -181,11 +182,13 @@ def valoracion_bono(
     # Si el bono es callable, suponemos que se rescata en el próximo call disponible.
     fecha_call = pd.NaT
     if str(bono.get("Callable")).strip().upper() == "Y":
-        fecha_call = pd.to_datetime(bono.get("Next Call Date"), dayfirst=True, errors="coerce")
+        # pandas admite None en ejecución, aunque la sobrecarga tipada lo omite.
+        fecha_call = pd.to_datetime(bono.get("Next Call Date"), dayfirst=True, errors="coerce")  # type: ignore[call-overload]
     # En los bonos perpetuos usamos el próximo call porque no tienen vencimiento.
     hay_rescate = (
         pd.notna(fecha_call)
-        and fecha_call > fecha
+        # El guard anterior excluye NaT antes de comparar una fecha de call válida.
+        and fecha_call > fecha  # type: ignore[unreachable]
         and (pd.isna(vencimiento_cupon) or fecha_call < vencimiento_cupon)
     )
     # Si hay rescate de un bono igualamos el vencimiento al call para calcular los flujos.
@@ -213,14 +216,16 @@ def valoracion_bono(
     # Obtenemos la fecha del último cupón pagado, y si no se usa la fecha de emisión
     ultimo_cupon_pagado = calendario_cupones[calendario_cupones <= fecha].max()
     if pd.isna(ultimo_cupon_pagado):
-        ultimo_cupon_pagado = pd.to_datetime(bono.get("Issue date"), dayfirst=True)
+        # max() devuelve NaT si aún no hay cupones pagados.
+        ultimo_cupon_pagado = pd.to_datetime(bono.get("Issue date"), dayfirst=True)  # type: ignore[unreachable]
 
     # Si la amortización cae entre cupones, añadimos un último pago prorrateado, calculando los devengos.
     cupon_final = importe_cupon
     if vencimiento_cupon not in calendario_cupones:
         inicio_devengo = calendario_cupones.max()
         if pd.isna(inicio_devengo):
-            inicio_devengo = ultimo_cupon_pagado
+            # Un calendario vacío devuelve NaT y requiere este punto de partida.
+            inicio_devengo = ultimo_cupon_pagado  # type: ignore[unreachable]
         cupon_final = cupon_anual * (vencimiento_cupon - inicio_devengo).days / 365
         cupones_faltantes = cupones_faltantes.insert(len(cupones_faltantes), vencimiento_cupon)
 
